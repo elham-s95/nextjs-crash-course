@@ -109,28 +109,6 @@ const EventSchema = new Schema<IEvent>(
   },
 );
 
-// Pre-save hook for slug generation and data normalization
-EventSchema.pre('save', function (next) {
-  const event = this as IEvent;
-
-  // Generate slug only if title changed or document is new
-  if (event.isModified('title') || event.isNew) {
-    event.slug = generateSlug(event.title);
-  }
-
-  // Normalize date to ISO format if it's not already
-  if (event.isModified('date')) {
-    event.date = normalizeDate(event.date);
-  }
-
-  // Normalize time format (HH:MM)
-  if (event.isModified('time')) {
-    event.time = normalizeTime(event.time);
-  }
-
-  next();
-});
-
 // Helper function to generate URL-friendly slug
 function generateSlug(title: string): string {
   return title
@@ -182,6 +160,35 @@ function normalizeTime(timeString: string): string {
 
   return `${hours.toString().padStart(2, '0')}:${minutes}`;
 }
+
+// Pre-save hook for slug generation and data normalization
+// Explicitly typed `next` to avoid TS picking the wrong `pre()` overload
+// (mixing untyped `next` with certain schema options can make TS think
+// you're calling the `options`-based overload, which is not callable).
+// No `next` callback here on purpose — relying on function arity to
+// decide whether Mongoose passes a `next` argument has proven unreliable
+// in this project's build (it was calling the hook with zero args despite
+// the function declaring one, producing "next is not a function"). A
+// plain function that just throws on error is treated the same way as an
+// async hook: a thrown error fails the save, a normal return succeeds.
+EventSchema.pre<IEvent>('save', function () {
+  const event = this as IEvent;
+
+  // Generate slug only if title changed or document is new
+  if (event.isModified('title') || event.isNew) {
+    event.slug = generateSlug(event.title);
+  }
+
+  // Normalize date to ISO format if it's not already
+  if (event.isModified('date')) {
+    event.date = normalizeDate(event.date);
+  }
+
+  // Normalize time format (HH:MM)
+  if (event.isModified('time')) {
+    event.time = normalizeTime(event.time);
+  }
+});
 
 // Create unique index on slug for better performance
 EventSchema.index({ slug: 1 }, { unique: true });
