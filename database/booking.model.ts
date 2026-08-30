@@ -37,48 +37,48 @@ const BookingSchema = new Schema<IBooking>(
   },
 );
 
-// Pre-save hook to validate events exists before creating booking
-BookingSchema.pre('save', async function (next) {
-  const booking = this as IBooking;
-
+// Pre-save hook to validate event exists before creating booking.
+//
+// IMPORTANT: this hook is `async` and does NOT take a `next` parameter.
+// Mongoose's `.pre()` has separate overloads for callback-style
+// (`function (next) {...}`) vs promise-style (`async function () {...}`)
+// middleware. Mixing the two (an async function that also declares
+// `next`) makes TypeScript pick the wrong overload, which is what
+// caused "This expression is not callable. Type 'SaveOptions' has no
+// call signatures." Throwing an error (or letting a rejected promise
+// propagate) is how you signal failure in an async pre-hook; returning
+// normally signals success.
+BookingSchema.pre('save', async function (this: IBooking) {
   // Only validate eventId if it's new or modified
-  if (booking.isModified('eventId') || booking.isNew) {
+  if (this.isModified('eventId') || this.isNew) {
+    let eventExists;
     try {
-      const eventExists = await Event.findById(booking.eventId).select('_id');
-
-      if (!eventExists) {
-        const error = new Error(
-          `Event with ID ${booking.eventId} does not exist`,
-        );
-        error.name = 'ValidationError';
-        return next(error);
-      }
+      eventExists = await Event.findById(this.eventId).select('_id');
     } catch {
-      const validationError = new Error(
-        'Invalid events ID format or database error',
-      );
-      validationError.name = 'ValidationError';
-      return next(validationError);
+      throw new Error('Invalid event ID format or database error');
+    }
+
+    if (!eventExists) {
+      throw new Error(`Event with ID ${this.eventId} does not exist`);
     }
   }
-
-  next();
 });
 
 // Create index on eventId for faster queries
 BookingSchema.index({ eventId: 1 });
 
-// Create compound index for common queries (events bookings by date)
+// Create compound index for common queries (event bookings by date)
 BookingSchema.index({ eventId: 1, createdAt: -1 });
 
 // Create index on email for user booking lookups
 BookingSchema.index({ email: 1 });
 
-// Enforce one booking per events per email
+// Enforce one booking per event per email
 BookingSchema.index(
   { eventId: 1, email: 1 },
   { unique: true, name: 'uniq_event_email' },
 );
+
 const Booking = models.Booking || model<IBooking>('Booking', BookingSchema);
 
 export default Booking;
